@@ -73,21 +73,20 @@ export const appRouter = router({
             const subscriptionPlan =
                 await getUserSubscriptionPlan()
 
+            const stripe = require('stripe')('your_stripe_secret_key');
+
+            const batch = stripe.batch();
+
             if (
                 subscriptionPlan.isSubscribed &&
                 dbUser.stripeCustomerId
             ) {
-                const stripeSession =
-                    await stripe.billingPortal.sessions.create({
-                        customer: dbUser.stripeCustomerId,
-                        return_url: billingUrl,
-                    })
-
-                return { url: stripeSession.url }
-            }
-
-            const stripeSession =
-                await stripe.checkout.sessions.create({
+                batch.create('billing_portal_sessions', {
+                    customer: dbUser.stripeCustomerId,
+                    return_url: billingUrl,
+                });
+            } else {
+                batch.create('checkout_sessions', {
                     success_url: billingUrl,
                     cancel_url: billingUrl,
                     payment_method_types: ['card'],
@@ -104,9 +103,17 @@ export const appRouter = router({
                     metadata: {
                         userId: userId,
                     },
-                })
+                });
+            }
 
-            return { url: stripeSession.url }
+            batch.create().then(function (batchResult: any) {
+                console.log(batchResult);
+                return { url: batchResult.data[0].url };
+            }).catch(function (err: any) {
+                // Deal with an error
+                console.log(err);
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+            });
         }
     ),
 
