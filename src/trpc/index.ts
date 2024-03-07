@@ -75,59 +75,48 @@ export const appRouter = router({
 
             const stripe = require('stripe')('your_stripe_secret_key');
 
-            const batch = [];
+            const promises = [];
 
             if (
                 subscriptionPlan.isSubscribed &&
                 dbUser.stripeCustomerId
             ) {
-                batch.push({
-                    method: 'POST',
-                    path: '/v1/billing_portal/sessions',
-                    body: {
-                        customer: dbUser.stripeCustomerId,
-                        return_url: billingUrl,
-                    },
-                });
+                promises.push(stripe.billingPortal.sessions.create({
+                    customer: dbUser.stripeCustomerId,
+                    return_url: billingUrl,
+                }));
             } else {
-                batch.push({
-                    method: 'POST',
-                    path: '/v1/checkout/sessions',
-                    body: {
-                        success_url: billingUrl,
-                        cancel_url: billingUrl,
-                        payment_method_types: ['card'],
-                        mode: 'subscription',
-                        billing_address_collection: 'auto',
-                        line_items: [
-                            {
-                                price: PLANS.find(
-                                    (plan) => plan.name === 'Pro'
-                                )?.price.priceIds.test,
-                                quantity: 1,
-                            },
-                        ],
-                        metadata: {
-                            userId: userId,
+                promises.push(stripe.checkout.sessions.create({
+                    success_url: billingUrl,
+                    cancel_url: billingUrl,
+                    payment_method_types: ['card'],
+                    mode: 'subscription',
+                    billing_address_collection: 'auto',
+                    line_items: [
+                        {
+                            price: PLANS.find(
+                                (plan) => plan.name === 'Pro'
+                            )?.price.priceIds.test,
+                            quantity: 1,
                         },
+                    ],
+                    metadata: {
+                        userId: userId,
                     },
-                });
+                }));
             }
 
-            stripe.request('batch', {
-                operations: batch,
-            }).then(function (batchResult: any) {
-                console.log(batchResult);
-                const url = batchResult.data[0].url;
-                return { url };
-            }).catch(function (err: any) {
-                // Deal with an error
-                console.log(err);
+            const results = await Promise.all(promises);
+
+            if (results.length === 0) {
                 throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-            });
+            }
+
+            const { url } = results[0];
+
+            return { url };
         }
     ),
-
     getFileMessages: privateProcedure
         .input(
             z.object({
