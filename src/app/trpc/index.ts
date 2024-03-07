@@ -18,7 +18,7 @@ import { PLANS } from '@/config/stripe'
 export const appRouter = router({
     authCallback: publicProcedure.query(async () => {
         const { getUser } = getKindeServerSession()
-        const user: any = await getUser()
+        const user: string | any = await getUser()
 
         if (!user.id || !user.email)
             throw new TRPCError({ code: 'UNAUTHORIZED' })
@@ -54,7 +54,7 @@ export const appRouter = router({
 
     createStripeSession: privateProcedure.mutation(
         async ({ ctx }) => {
-            const { userId } = ctx
+            const { userId }: string | any = ctx
 
             const billingUrl = absoluteUrl('/dashboard/billing')
 
@@ -84,14 +84,17 @@ export const appRouter = router({
                     })
 
                 return { url: stripeSession.url }
+
             }
+
 
             const stripeSession =
                 await stripe.checkout.sessions.create({
                     success_url: billingUrl,
                     cancel_url: billingUrl,
-                    payment_method_types: ['card', 'paypal'],
+                    payment_method_types: ['card'],
                     mode: 'subscription',
+                    currency: 'usd',
                     billing_address_collection: 'auto',
                     line_items: [
                         {

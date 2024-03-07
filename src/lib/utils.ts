@@ -15,3 +15,23 @@ export function absoluteUrl(path: string) {
     }${path}`
 }
 
+export function constructMetadata({
+  title = "Aviso - the SaaS for students",
+  description = "Aviso is a software to make chatting to your PDF and Audio files easy.",
+  noIndex = false
+}: {
+  title?: string
+  description?: string
+  noIndex?: boolean
+} = {}): Metadata {
+  return {
+    title,
+    description,
+    ...(noIndex && {
+      robots: {
+        index: false,
+        follow: false
+      }
+    })
+  }
+}
