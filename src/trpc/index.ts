@@ -75,40 +75,51 @@ export const appRouter = router({
 
             const stripe = require('stripe')('your_stripe_secret_key');
 
-            const batch = stripe.batch();
+            const batch = [];
 
             if (
                 subscriptionPlan.isSubscribed &&
                 dbUser.stripeCustomerId
             ) {
-                batch.create('billing_portal_sessions', {
-                    customer: dbUser.stripeCustomerId,
-                    return_url: billingUrl,
+                batch.push({
+                    method: 'POST',
+                    path: '/v1/billing_portal/sessions',
+                    body: {
+                        customer: dbUser.stripeCustomerId,
+                        return_url: billingUrl,
+                    },
                 });
             } else {
-                batch.create('checkout_sessions', {
-                    success_url: billingUrl,
-                    cancel_url: billingUrl,
-                    payment_method_types: ['card'],
-                    mode: 'subscription',
-                    billing_address_collection: 'auto',
-                    line_items: [
-                        {
-                            price: PLANS.find(
-                                (plan) => plan.name === 'Pro'
-                            )?.price.priceIds.test,
-                            quantity: 1,
+                batch.push({
+                    method: 'POST',
+                    path: '/v1/checkout/sessions',
+                    body: {
+                        success_url: billingUrl,
+                        cancel_url: billingUrl,
+                        payment_method_types: ['card'],
+                        mode: 'subscription',
+                        billing_address_collection: 'auto',
+                        line_items: [
+                            {
+                                price: PLANS.find(
+                                    (plan) => plan.name === 'Pro'
+                                )?.price.priceIds.test,
+                                quantity: 1,
+                            },
+                        ],
+                        metadata: {
+                            userId: userId,
                         },
-                    ],
-                    metadata: {
-                        userId: userId,
                     },
                 });
             }
 
-            batch.create().then(function (batchResult: any) {
+            stripe.request('batch', {
+                operations: batch,
+            }).then(function (batchResult: any) {
                 console.log(batchResult);
-                return { url: batchResult.data[0].url };
+                const url = batchResult.data[0].url;
+                return { url };
             }).catch(function (err: any) {
                 // Deal with an error
                 console.log(err);
