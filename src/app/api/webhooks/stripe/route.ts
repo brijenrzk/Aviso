@@ -4,6 +4,8 @@ import { headers } from 'next/headers'
 import type Stripe from 'stripe'
 
 export async function POST(request: Request) {
+
+    console.log("this is working..")
     const body = await request.text()
     const signature = headers().get('Stripe-Signature') ?? ''
 
@@ -13,7 +15,7 @@ export async function POST(request: Request) {
         event = stripe.webhooks.constructEvent(
             body,
             signature,
-            process.env.STRIPE_WEBHOOK_SECRET || ''
+            process.env.STRIPE_WEBHOOK_SIGNING_SECRET || ''
         )
     } catch (err) {
         return new Response(
@@ -33,10 +35,13 @@ export async function POST(request: Request) {
     }
 
     if (event.type === 'checkout.session.completed') {
+        console.log("This is checkout completedted running")
         const subscription =
             await stripe.subscriptions.retrieve(
                 session.subscription as string
             )
+
+        console.log(subscription.id, "subscriptio id")
 
         await db.user.update({
             where: {

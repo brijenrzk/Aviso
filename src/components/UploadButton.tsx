@@ -5,12 +5,14 @@ import { Dialog, DialogContent } from "./ui/dialog";
 import { DialogTrigger } from "@radix-ui/react-dialog";
 import { Button } from "./ui/button";
 import Dropzone from 'react-dropzone';
-import { Cloud, File, Loader2 } from "lucide-react";
+import { Cloud, Loader2 } from "lucide-react";
 import { Progress } from "./ui/progress";
 import { useUploadThing } from "@/lib/uploadthing";
 import { useToast } from "./ui/use-toast";
 import { trpc } from "@/app/_trpc/client";
 import { useRouter } from "next/navigation";
+import { PDFDocument } from 'pdf-lib';
+
 
 
 const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
@@ -19,9 +21,105 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
 
     const [isUploading, setIsUploading] = useState<boolean>(false)
     const [uploadProgress, setUploadProgress] = useState<number>(0);
+    const [formData, setFormData] = useState<FormData | null>(null);
+    const [output, setOutput] = useState<string>("");
+
+
+    // const convertAudio = async (file: string) => {
+    //     const filePath = file;
+
+    //     const loader = new OpenAIWhisperAudio(filePath);
+
+    //     const docs = await loader.load();
+
+    //     console.log(docs);
+    // }
+
+    const doStuff = async (file: any) => {
+        // console.log("My env + ", JSON.stringify({ "file": file.path, "model": "whisper-1" }))
+        const dataa = new FormData();
+        dataa.append("file", file);
+        dataa.append("model", "whisper-1");
+        dataa.append("language", "en");
+        const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+            headers: {
+                Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
+            },
+            method: "POST",
+            body: dataa,
+        });
+
+        const data = await res.json();
+
+        setOutput(data.text);
+
+        return data.text
+
+    };
+
 
     const { startUpload } = useUploadThing(
-        isSubscribed ? "proPlanUploader" : "freePlanUploader"
+        isSubscribed ? "proPlanUploader" : "freePlanUploader",
+        {
+            onBeforeUploadBegin: async (files: any) => {
+                // files.map((file: any) => {
+                //     console.log("I am checking files ", file.path)
+                //     // convertAudio(file.name)
+                //     console.log("My output", output)
+
+                //     console.log("my file type ", file.type)
+                //     if (file.type === 'application/pdf') {
+                //         console.log('It is validated!')
+                //     } else {
+                //         console.log("audio file")
+
+                //         const textFile = doStuff(file)
+
+
+                //     }
+                // })
+                // return files
+                const processedFiles = await Promise.all(files.map(async (file: any) => {
+                    console.log("I am checking files ", file.path);
+
+                    if (file.type === 'application/pdf') {
+                        console.log('It is a validated PDF file!');
+                    } else {
+
+                        console.log("Audio file");
+
+                        // Assuming doStuff returns a promise with the text content
+                        const textContent = await doStuff(file);
+
+                        // Create a new PDF document
+                        const pdfDoc = await PDFDocument.create();
+
+                        // Add a new page and write text content
+                        const page = pdfDoc.addPage();
+                        const { width, height } = page.getSize();
+
+                        // Use 'size' instead of 'fontSize' for newer versions of pdf-lib
+                        const fontSize = 12;
+                        page.drawText(textContent, { x: 50, y: height - 50, size: fontSize });
+
+                        // Serialize the PDF document to a Uint8Array
+                        const pdfBytes = await pdfDoc.save();
+
+                        // Create a new File object with the PDF content
+                        const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+                        const pdfFile = new File([pdfBlob], `${file.name}.pdf`, { type: 'application/pdf' }) as any;
+
+                        // Do something with the generated PDF file
+                        console.log("Generated PDF file:", pdfFile);
+
+                        return pdfFile;
+                    }
+                }));
+
+                return processedFiles;
+            },
+        }
     )
     const { mutate: startPolling } = trpc.getFile.useMutation({
         onSuccess: (file) => {
@@ -101,7 +199,7 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
                         {acceptedFiles && acceptedFiles[0] ? (
                             <div className="max-w-xs bg-white flex items-center rounded-md overflow-hidden outline outline-[1px] outline-zinc-200 divide-x divide-zinc-200">
                                 <div className="px-3 py-2 h-full grip place-items-center">
-                                    <File className="h-4 w-4 text-blie-500" />
+                                    {/* <File className="h-4 w-4 text-blie-500" /> */}
                                 </div>
                                 <div className="px-3 py-2 h-full text0-sm truncate">
                                     {acceptedFiles[0].name}

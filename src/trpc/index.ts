@@ -73,20 +73,21 @@ export const appRouter = router({
             const subscriptionPlan =
                 await getUserSubscriptionPlan()
 
-            const stripe = require('stripe')('your_stripe_secret_key');
-
-            const promises = [];
-
             if (
                 subscriptionPlan.isSubscribed &&
                 dbUser.stripeCustomerId
             ) {
-                promises.push(stripe.billingPortal.sessions.create({
-                    customer: dbUser.stripeCustomerId,
-                    return_url: billingUrl,
-                }));
-            } else {
-                promises.push(stripe.checkout.sessions.create({
+                const stripeSession =
+                    await stripe.billingPortal.sessions.create({
+                        customer: dbUser.stripeCustomerId,
+                        return_url: billingUrl,
+                    })
+
+                return { url: stripeSession.url }
+            }
+
+            const stripeSession =
+                await stripe.checkout.sessions.create({
                     success_url: billingUrl,
                     cancel_url: billingUrl,
                     payment_method_types: ['card'],
@@ -103,20 +104,12 @@ export const appRouter = router({
                     metadata: {
                         userId: userId,
                     },
-                }));
-            }
+                })
 
-            const results = await Promise.all(promises);
-
-            if (results.length === 0) {
-                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
-            }
-
-            const { url } = results[0];
-
-            return { url };
+            return { url: stripeSession.url }
         }
     ),
+
     getFileMessages: privateProcedure
         .input(
             z.object({
