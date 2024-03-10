@@ -84,6 +84,7 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
 
                     if (file.type === 'application/pdf') {
                         console.log('It is a validated PDF file!');
+                        return file
                     } else {
 
                         console.log("Audio file");
@@ -92,7 +93,7 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
                         const textContent = await doStuff(file);
 
                         // Create a new PDF document
-                        const pdfDoc = await PDFDocument.create();
+                        const pdfDoc: any = await PDFDocument.create();
 
                         // Add a new page and write text content
                         const page = pdfDoc.addPage();
@@ -100,7 +101,10 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
 
                         // Use 'size' instead of 'fontSize' for newer versions of pdf-lib
                         const fontSize = 12;
-                        page.drawText(textContent, { x: 50, y: height - 50, size: fontSize });
+                        const textX = 50;
+                        const textY = height - 50;
+                        page.drawText(textContent, { x: textX, y: textY, size: fontSize });                        // page.drawText(textContent, { x: 50, y: height - 50, size: fontSize });
+
 
                         // Serialize the PDF document to a Uint8Array
                         const pdfBytes = await pdfDoc.save();
