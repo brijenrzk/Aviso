@@ -69,13 +69,17 @@ const onUploadComplete = async ({ metadata, file }:
         //i need this
         const pageLevelDocs = await loader.load()
         const pageAmt = pageLevelDocs.length
+        console.log("my page amt", pageAmt)
 
         const { subscriptionPlan } = metadata
         const { isSubscribed } = subscriptionPlan
 
         const isProExceeded = pageAmt > PLANS.find((plan) => plan.name === "Pro")!.pagesPerPdf
         const isFreeExceeded = pageAmt > PLANS.find((plan) => plan.name === "Free")!.pagesPerPdf
+        console.log("free plan", PLANS.find((plan) => plan.name === "Free")!.pagesPerPdf)
+        console.log(!isSubscribed && isFreeExceeded)
         if ((isSubscribed && isProExceeded) || (!isSubscribed && isFreeExceeded)) {
+            console.log("i am being called")
             await db.file.update({
                 data: {
                     UploadStatus: "FAILED"
@@ -84,26 +88,27 @@ const onUploadComplete = async ({ metadata, file }:
                     id: createdFile.id
                 }
             })
+        } else {
+
+            const pineconeIndex = pinecone.Index("aviso")
+            const embeddings = new OpenAIEmbeddings({
+                openAIApiKey: process.env.openAIApiKey,
+            })
+            await PineconeStore.fromDocuments(pageLevelDocs, embeddings, {
+                pineconeIndex,
+                namespace: createdFile.id
+            })
+
+            await db.file.update({
+                data: {
+                    UploadStatus: "SUCCESS"
+                },
+                where: {
+                    id: createdFile.id
+                }
+
+            })
         }
-
-        const pineconeIndex = pinecone.Index("aviso")
-        const embeddings = new OpenAIEmbeddings({
-            openAIApiKey: process.env.openAIApiKey,
-        })
-        await PineconeStore.fromDocuments(pageLevelDocs, embeddings, {
-            pineconeIndex,
-            namespace: createdFile.id
-        })
-
-        await db.file.update({
-            data: {
-                UploadStatus: "SUCCESS"
-            },
-            where: {
-                id: createdFile.id
-            }
-
-        })
 
     } catch (err) {
         await db.file.update({
@@ -120,10 +125,10 @@ const onUploadComplete = async ({ metadata, file }:
 
 
 export const ourFileRouter = {
-    freePlanUploader: f({ pdf: { maxFileSize: "4MB" }, audio: { maxFileSize: "4MB" } })
+    freePlanUploader: f({ pdf: { maxFileSize: "4MB" }, audio: { maxFileSize: "16MB" } })
         .middleware(middleware)
         .onUploadComplete(onUploadComplete),
-    proPlanUploader: f({ pdf: { maxFileSize: "16MB" }, audio: { maxFileSize: "16MB" } })
+    proPlanUploader: f({ pdf: { maxFileSize: "4MB" }, audio: { maxFileSize: "16MB" } })
         .middleware(middleware)
         .onUploadComplete(onUploadComplete),
 } satisfies FileRouter;

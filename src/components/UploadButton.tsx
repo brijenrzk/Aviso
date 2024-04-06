@@ -15,6 +15,7 @@ import { PDFDocument } from 'pdf-lib';
 
 
 
+
 const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
 
     const router = useRouter()
@@ -23,20 +24,10 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
     const [uploadProgress, setUploadProgress] = useState<number>(0);
     const [formData, setFormData] = useState<FormData | null>(null);
     const [output, setOutput] = useState<string>("");
+    const [err, SetErr] = useState(false);
 
-
-    // const convertAudio = async (file: string) => {
-    //     const filePath = file;
-
-    //     const loader = new OpenAIWhisperAudio(filePath);
-
-    //     const docs = await loader.load();
-
-    //     console.log(docs);
-    // }
 
     const doStuff = async (file: any) => {
-        // console.log("My env + ", JSON.stringify({ "file": file.path, "model": "whisper-1" }))
         const dataa = new FormData();
         dataa.append("file", file);
         dataa.append("model", "whisper-1");
@@ -57,28 +48,10 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
 
     };
 
-
     const { startUpload } = useUploadThing(
         isSubscribed ? "proPlanUploader" : "freePlanUploader",
         {
             onBeforeUploadBegin: async (files: any) => {
-                // files.map((file: any) => {
-                //     console.log("I am checking files ", file.path)
-                //     // convertAudio(file.name)
-                //     console.log("My output", output)
-
-                //     console.log("my file type ", file.type)
-                //     if (file.type === 'application/pdf') {
-                //         console.log('It is validated!')
-                //     } else {
-                //         console.log("audio file")
-
-                //         const textFile = doStuff(file)
-
-
-                //     }
-                // })
-                // return files
                 const processedFiles = await Promise.all(files.map(async (file: any) => {
                     console.log("I am checking files ", file.path);
 
@@ -86,37 +59,17 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
                         console.log('It is a validated PDF file!');
                         return file
                     } else {
-
-                        console.log("Audio file");
-
-                        // Assuming doStuff returns a promise with the text content
                         const textContent = await doStuff(file);
-
-                        // Create a new PDF document
                         const pdfDoc: any = await PDFDocument.create();
-
-                        // Add a new page and write text content
                         const page = pdfDoc.addPage();
                         const { width, height } = page.getSize();
-
-                        // Use 'size' instead of 'fontSize' for newer versions of pdf-lib
                         const fontSize = 12;
                         const textX = 50;
                         const textY = height - 50;
-                        page.drawText(textContent, { x: textX, y: textY, size: fontSize });                        // page.drawText(textContent, { x: 50, y: height - 50, size: fontSize });
-
-
-                        // Serialize the PDF document to a Uint8Array
+                        page.drawText(textContent, { x: textX, y: textY, size: fontSize });
                         const pdfBytes = await pdfDoc.save();
-
-                        // Create a new File object with the PDF content
                         const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
-
                         const pdfFile = new File([pdfBlob], `${file.name}.pdf`, { type: 'application/pdf' }) as any;
-
-                        // Do something with the generated PDF file
-                        console.log("Generated PDF file:", pdfFile);
-
                         return pdfFile;
                     }
                 }));
@@ -158,9 +111,11 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
         const res = await startUpload(acceptedFile)
 
         if (!res) {
+            SetErr(true)
+            setIsUploading(false)
             return toast({
                 title: "Something went wrong",
-                description: "Please try again later",
+                description: "Max file size allowed is 4mb",
                 variant: "destructive"
             })
         }
@@ -197,7 +152,7 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
                                 </span>
                                 or drag and drop
                             </p>
-                            <p className="tex-xs text-zinc-500">PDF or Audio File (up to {isSubscribed ? "16" : "4"}MB)</p>
+                            <p className="tex-xs text-zinc-500">PDF or Audio File (up to {isSubscribed ? "16" : "4"}MB & {isSubscribed ? "25" : "5"} pages)</p>
                         </div>
 
                         {acceptedFiles && acceptedFiles[0] ? (
@@ -214,8 +169,12 @@ const UploadDropzone = ({ isSubscribed }: { isSubscribed: boolean }) => {
                         {isUploading ? (
                             <div className="w-full mt-4 max-w-xs mx-auto">
                                 <Progress
+
                                     indicatorColor={
-                                        uploadProgress === 100 ? 'bg-green-500' : ''
+                                        err ?
+                                            'bg-red-500'
+                                            :
+                                            uploadProgress === 100 ? 'bg-green-500' : ''
                                     }
                                     value={uploadProgress} className="h-1 w-full bg-zinc-200" />
                                 {uploadProgress === 100 ? (
