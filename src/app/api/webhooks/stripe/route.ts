@@ -1,88 +1,85 @@
-import { db } from '@/db';
-import { stripe } from '@/lib/stripe';
-import { headers } from 'next/headers';
-import { NextRequest } from 'next/server';
-import type Stripe from 'stripe';
+import { db } from '@/db'
+import { stripe } from '@/lib/stripe'
+import { headers } from 'next/headers'
+import type { NextRequest } from 'next/server'
+import type Stripe from 'stripe'
 
-// Read raw body from ReadableStream
-async function getRawBody(readable: ReadableStream<Uint8Array> | null): Promise<Buffer> {
-    if (!readable) throw new Error('No readable stream');
-    const reader = readable.getReader();
-    const chunks: Uint8Array[] = [];
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
-    }
-
-    return Buffer.concat(chunks);
-}
+// Required for Stripe to verify the raw body signature
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-    let event: Stripe.Event;
-    const sig = headers().get('stripe-signature') ?? '';
+    // Read raw body manually for Stripe signature verification
+    const rawBody = await req.text()
+    const signature = headers().get('stripe-signature') ?? ''
 
-    let rawBody: Buffer;
-    try {
-        rawBody = await getRawBody(req.body);
-    } catch (err) {
-        return new Response('Unable to read body', { status: 400 });
-    }
+    let event: Stripe.Event
 
     try {
         event = stripe.webhooks.constructEvent(
             rawBody,
-            sig,
+            signature,
             process.env.STRIPE_WEBHOOK_SIGNING_SECRET || ''
-        );
+        )
     } catch (err) {
-        console.error('❌ Webhook signature verification failed.', err);
-        return new Response(
-            `Webhook Error: ${err instanceof Error ? err.message : 'Unknown error'}`,
-            { status: 400 }
-        );
+        const message =
+            err instanceof Error ? err.message : 'Unknown Error'
+        console.error('⚠️ Stripe webhook signature error:', message)
+
+        return new Response(`Webhook Error: ${message}`, {
+            status: 400,
+        })
     }
 
-    const session = event.data.object as Stripe.Checkout.Session;
+    const session = event.data.object as Stripe.Checkout.Session
 
     if (!session?.metadata?.userId) {
-        return new Response(null, { status: 200 });
+        return new Response(null, { status: 200 })
     }
 
-    if (event.type === 'checkout.session.completed') {
-        const subscription = await stripe.subscriptions.retrieve(
-            session.subscription as string
-        );
+    try {
+        if (event.type === 'checkout.session.completed') {
+            console.log('✅ Checkout session completed')
 
-        await db.user.update({
-            where: {
-                id: session.metadata.userId,
-            },
-            data: {
-                stripeSubscriptionId: subscription.id,
-                stripeCustomerId: subscription.customer as string,
-                stripePriceId: subscription.items.data[0]?.price.id,
-                stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
-            },
-        });
+            const subscription = await stripe.subscriptions.retrieve(
+                session.subscription as string
+            )
+
+            await db.user.update({
+                where: { id: session.metadata.userId },
+                data: {
+                    stripeSubscriptionId: subscription.id,
+                    stripeCustomerId: subscription.customer as string,
+                    stripePriceId: subscription.items.data[0]?.price.id,
+                    stripeCurrentPeriodEnd: new Date(
+                        subscription.current_period_end * 1000
+                    ),
+                },
+            })
+        }
+
+        if (event.type === 'invoice.payment_succeeded') {
+            console.log('✅ Invoice payment succeeded')
+
+            const subscription = await stripe.subscriptions.retrieve(
+                session.subscription as string
+            )
+
+            await db.user.update({
+                where: {
+                    stripeSubscriptionId: subscription.id,
+                },
+                data: {
+                    stripePriceId: subscription.items.data[0]?.price.id,
+                    stripeCurrentPeriodEnd: new Date(
+                        subscription.current_period_end * 1000
+                    ),
+                },
+            })
+        }
+
+        return new Response(null, { status: 200 })
+    } catch (err) {
+        console.error('❌ Error processing Stripe webhook:', err)
+        return new Response('Internal error', { status: 500 })
     }
-
-    if (event.type === 'invoice.payment_succeeded') {
-        const subscription = await stripe.subscriptions.retrieve(
-            session.subscription as string
-        );
-
-        await db.user.update({
-            where: {
-                stripeSubscriptionId: subscription.id,
-            },
-            data: {
-                stripePriceId: subscription.items.data[0]?.price.id,
-                stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
-            },
-        });
-    }
-
-    return new Response(null, { status: 200 });
 }
