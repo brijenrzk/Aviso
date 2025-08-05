@@ -89,17 +89,27 @@ export const POST = async (req: NextRequest) => {
 
     const res = await model.invoke(chatInput);
 
-    // Store assistant reply
+    // ✅ Safely extract and flatten the text content
+    const reply =
+        Array.isArray(res.content)
+            ? res.content.map((c: any) => (typeof c === "string" ? c : c.text)).join(" ")
+            : typeof res.content === "string"
+                ? res.content
+                : (res.content as any)?.text ?? "";
+
+    // Save to database
     await db.message.create({
         data: {
-            text: res.content,
+            text: reply,
             isUserMessage: false,
             userId,
             fileId,
         },
     });
 
-    return new Response(res.content, {
+    // Return the response
+    return new Response(reply, {
         status: 200,
     });
+
 };
