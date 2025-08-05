@@ -89,15 +89,17 @@ const onUploadComplete = async ({ metadata, file }:
                 }
             })
         } else {
-
             const pineconeIndex = pinecone.Index("aviso")
+            console.log("dd", pineconeIndex)
             const embeddings = new OpenAIEmbeddings({
                 openAIApiKey: process.env.openAIApiKey,
             })
-            await PineconeStore.fromDocuments(pageLevelDocs, embeddings, {
+            console.log(embeddings)
+            const aa = await PineconeStore.fromDocuments(pageLevelDocs, embeddings, {
                 pineconeIndex,
                 namespace: createdFile.id
             })
+            console.log("check", aa)
 
             await db.file.update({
                 data: {
@@ -108,9 +110,11 @@ const onUploadComplete = async ({ metadata, file }:
                 }
 
             })
+            console.log('I ma working 22')
         }
 
     } catch (err) {
+        console.log("faileinng", err)
         await db.file.update({
             data: {
                 UploadStatus: "FAILED"
