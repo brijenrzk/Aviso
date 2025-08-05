@@ -4,13 +4,9 @@ import { headers } from 'next/headers';
 import { NextRequest } from 'next/server';
 import type Stripe from 'stripe';
 
-export const config = {
-    api: {
-        bodyParser: false,
-    },
-};
-
-async function buffer(readable: ReadableStream<Uint8Array>) {
+// Read raw body from ReadableStream
+async function getRawBody(readable: ReadableStream<Uint8Array> | null): Promise<Buffer> {
+    if (!readable) throw new Error('No readable stream');
     const reader = readable.getReader();
     const chunks: Uint8Array[] = [];
 
@@ -24,10 +20,15 @@ async function buffer(readable: ReadableStream<Uint8Array>) {
 }
 
 export async function POST(req: NextRequest) {
-    const rawBody = await buffer(req.body!);
+    let event: Stripe.Event;
     const sig = headers().get('stripe-signature') ?? '';
 
-    let event: Stripe.Event;
+    let rawBody: Buffer;
+    try {
+        rawBody = await getRawBody(req.body);
+    } catch (err) {
+        return new Response('Unable to read body', { status: 400 });
+    }
 
     try {
         event = stripe.webhooks.constructEvent(
@@ -62,9 +63,7 @@ export async function POST(req: NextRequest) {
                 stripeSubscriptionId: subscription.id,
                 stripeCustomerId: subscription.customer as string,
                 stripePriceId: subscription.items.data[0]?.price.id,
-                stripeCurrentPeriodEnd: new Date(
-                    subscription.current_period_end * 1000
-                ),
+                stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
             },
         });
     }
@@ -80,9 +79,7 @@ export async function POST(req: NextRequest) {
             },
             data: {
                 stripePriceId: subscription.items.data[0]?.price.id,
-                stripeCurrentPeriodEnd: new Date(
-                    subscription.current_period_end * 1000
-                ),
+                stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
             },
         });
     }
