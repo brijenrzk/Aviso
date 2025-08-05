@@ -1,35 +1,31 @@
 import { db } from "@/db";
-import { openai } from "@/lib/openai";
 import { pinecone } from "@/lib/pinecone";
 import { SendMessageValidator } from "@/lib/validators/SendMessageValidator";
-import { getKindeServerSession } from "@kinde-oss/kinde-auth-nextjs/server"
+import { getKindeServerSession } from "@kinde-oss/kinde-auth-nextjs/server";
 
-import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PineconeStore } from "langchain/vectorstores/pinecone";
-import { OpenAIStream, StreamingTextResponse } from 'ai'
-
 import { NextRequest } from "next/server";
 
 export const POST = async (req: NextRequest) => {
+    const body = await req.json();
 
-    const body = await req.json()
-
-    const { getUser } = getKindeServerSession()
+    const { getUser } = getKindeServerSession();
     const user = await getUser();
-    // const { id: userId } = user
-    const userId = user?.id
+    const userId = user?.id;
 
-    if (!userId) return new Response("Unauthorized", { status: 401 })
+    if (!userId) return new Response("Unauthorized", { status: 401 });
 
-    const { fileId, message } = SendMessageValidator.parse(body)
+    const { fileId, message } = SendMessageValidator.parse(body);
 
     const file = await db.file.findFirst({
         where: {
             id: fileId,
             userId,
-        }
-    })
-    if (!file) return new Response("Not found", { status: 401 })
+        },
+    });
+    if (!file) return new Response("Not found", { status: 404 });
 
     await db.message.create({
         data: {
@@ -38,81 +34,72 @@ export const POST = async (req: NextRequest) => {
             userId,
             fileId,
         },
-    })
+    });
 
-    //LLM
-    const embeddings = new OpenAIEmbeddings({
-        openAIApiKey: process.env.openAIApiKey,
-    })
-    const pineconeIndex = pinecone.Index("aviso")
+    // ✅ GEMINI EMBEDDINGS
+    const embeddings = new GoogleGenerativeAIEmbeddings({
+        apiKey: process.env.GOOGLE_API_KEY!,
+        modelName: "models/embedding-001",
+    });
+
+    const pineconeIndex = pinecone.Index("aviso");
 
     const vectorStore = await PineconeStore.fromExistingIndex(embeddings, {
         pineconeIndex,
-        namespace: file.id
-    })
+        namespace: file.id,
+    });
 
-    const results = await vectorStore.similaritySearch(message, 4)
+    const results = await vectorStore.similaritySearch(message, 4);
+
     const prevMessages = await db.message.findMany({
-        where: {
-            fileId
-        },
-        orderBy: {
-            createdAt: "asc"
-        },
-        take: 6
-    })
+        where: { fileId },
+        orderBy: { createdAt: "asc" },
+        take: 6,
+    });
 
     const formattedPrevMessages = prevMessages.map((msg) => ({
-        role: msg.isUserMessage ? "user" as const : "assistant" as const,
-        content: msg.text
-    }))
+        role: msg.isUserMessage ? "user" : "assistant",
+        content: msg.text,
+    }));
 
-    const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+    // ✅ GEMINI LLM
+    const model = new ChatGoogleGenerativeAI({
+        apiKey: process.env.GOOGLE_API_KEY!,
+        model: "models/gemini-2.0-flash",
+        maxOutputTokens: 2048,
         temperature: 0,
-        stream: true,
-        messages: [
-            {
-                role: 'system',
-                content:
-                    'Use the following pieces of context (or previous conversaton if needed) to answer the users question in markdown format.',
-            },
-            {
-                role: 'user',
-                content: `Use the following pieces of context (or previous conversaton if needed) to answer the users question in markdown format. \nIf you don't know the answer, just say that you don't know, don't try to make up an answer.
-              
-        \n----------------\n
-        
-        PREVIOUS CONVERSATION:
-        ${formattedPrevMessages.map((message) => {
-                    if (message.role === 'user') return `User: ${message.content}\n`
-                    return `Assistant: ${message.content}\n`
-                })}
-        
-        \n----------------\n
-        
-        CONTEXT:
-        ${results.map((r) => r.pageContent).join('\n\n')}
-        
-        USER INPUT: ${message}`,
-            },
-        ],
-    })
+    });
 
+    const chatInput = [
+        {
+            role: "system",
+            content:
+                "Use the following pieces of context (or previous conversation if needed) to answer the user's question in markdown format.",
+        },
+        ...formattedPrevMessages,
+        {
+            role: "user",
+            content: `Use the following context and chat history to respond:\n\n---\n\nPREVIOUS:\n${formattedPrevMessages
+                .map((m) => `${m.role}: ${m.content}`)
+                .join("\n")}\n\n---\n\nCONTEXT:\n${results
+                    .map((r) => r.pageContent)
+                    .join("\n\n")}\n\nUSER INPUT:\n${message}`,
+        },
+    ];
 
-    const stream = OpenAIStream(response, {
-        async onCompletion(completion) {
-            await db.message.create({
-                data: {
-                    text: completion,
-                    isUserMessage: false,
-                    fileId,
-                    userId
-                }
-            })
-        }
-    })
+    const res = await model.invoke(chatInput);
 
-    return new StreamingTextResponse(stream)
+    // Store assistant reply
+    await db.message.create({
+        data: {
+            text: res.content,
+            isUserMessage: false,
+            userId,
+            fileId,
+        },
+    });
 
-}
+    return new Response(res.content, {
+        status: 200,
+    });
+};

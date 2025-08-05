@@ -8,7 +8,9 @@ import { pinecone } from "@/lib/pinecone";
 import { PineconeStore } from 'langchain/vectorstores/pinecone';
 import { getUserSubscriptionPlan } from "@/lib/stripe";
 import { PLANS } from "@/config/stripe";
-import { string } from "zod";
+import { PineconeEmbeddings } from "@langchain/pinecone";
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+
 
 const f = createUploadthing();
 
@@ -91,9 +93,13 @@ const onUploadComplete = async ({ metadata, file }:
         } else {
             const pineconeIndex = pinecone.Index("aviso")
             console.log("dd", pineconeIndex)
-            const embeddings = new OpenAIEmbeddings({
-                openAIApiKey: process.env.openAIApiKey,
-            })
+            // const embeddings = new PineconeEmbeddings({
+            //     model: "multilingual-e5-large",
+            // })
+            const embeddings = new GoogleGenerativeAIEmbeddings({
+                apiKey: process.env.GOOGLE_API_KEY!,
+                modelName: "models/embedding-001",
+            });
             console.log(embeddings)
             const aa = await PineconeStore.fromDocuments(pageLevelDocs, embeddings, {
                 pineconeIndex,
